@@ -164,15 +164,13 @@ void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t* lck)
     char* buffer = malloc(sizeof(*buffer) * BUFFERSIZE);
     int hashNum;
     while(fscanf(f, "%s", buffer) != EOF){
-        // int collision = addToHashMap(hashMap, buffer);
-
         //Distribute to the Buffers and the other threads will deal with mapping
         MapperWorkElement* wordElement = malloc(sizeof(*wordElement));
         wordElement->next = NULL;
         wordElement->word =  malloc(sizeof(char) * strlen(buffer));
         strcpy(wordElement -> word, buffer);
 
-        //Figure out which Queue to put into
+        //Figure out which Queue to put into (Balancing)
         int minIndex = 0;
         int minLength = __INT_MAX__;
         int i;
@@ -183,21 +181,16 @@ void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t* lck)
             }
         }
         //Add to Q
-        // printf("%s\n",wordElement->word);
         omp_set_lock(lck);
         addToMapperQueue(mapperQ,wordElement,minIndex);
         omp_unset_lock(lck);
     }
-    // printHashMap(hashMap);
-    // printMapperQueue(mapperQ);
 }
 
-void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index, int* readerIsDone, omp_lock_t* parserlck ,omp_lock_t * mapperlck) {
-    // int amazingcounter = 0;
+void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index, omp_lock_t* parserlck) {
     omp_set_lock(parserlck);
     MapperWorkQueue* currQ  = &mapperQ[index];
     while(currQ -> head != NULL) {
-        // printf("%d",*readerIsDone);
         MapperWorkQueue* currQ  = &mapperQ[index];
         MapperWorkElement* temp = currQ -> head;
         while(temp != NULL) {
@@ -211,16 +204,9 @@ void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index,
             reductionElement ->wordPair = wordPair;
             reductionElement ->next = NULL;
             // printf("%d: %s:%d\n",reducerIndex,reductionElement->wordPair->word,reductionElement->wordPair->count);
-            
-            
             addToReductionQueue(reductionQ,reductionElement,reducerIndex);
-            
-
-            // omp_set_lock(parserlck); 
             currQ -> head = temp -> next;
             temp = temp ->next;
-            // omp_unset_lock(parserlck);
-
         }
     }
     omp_unset_lock(parserlck);
@@ -268,11 +254,9 @@ int main(int argc, char** argv) {
     int amazingcounter = 0;
     //omp parallel {} NOT paralllel FOR!
     // for(tid = 1; tid < NUMPROCESS; tid++){
-    omp_lock_t parserlck,mapperlck,reducerlck;
+    omp_lock_t parserlck,reducerlck;
     omp_init_lock(&parserlck);
-    omp_init_lock(&mapperlck);
     omp_init_lock(&reducerlck);
-
 
     omp_set_num_threads(NUMPROCESS);
     #pragma omp parallel shared(readerIsDone,mapperIsDone,mapperQ,reductionQ,hashMap)
@@ -293,19 +277,16 @@ int main(int argc, char** argv) {
         else if(tid > 5 && tid <= 10) {
             //MAPPER
             while(readerIsDone >0) {
-                    // printf("%d",readerIsDone);
-                amazingcounter += readerIsDone;
+                asm("");
                 sleep(.1);
-                mapper(mapperQ,reductionQ,tid - 6,&readerIsDone,&parserlck,&mapperlck);
+                mapper(mapperQ,reductionQ,tid - 6,&parserlck);
             }
             // mapper(mapperQ,reductionQ,tid - 6,&readerIsDone,&parserlck,&mapperlck);
             mapperIsDone -= 1;
         }
         else if(tid > 10 && tid <= 16){
             //REDUCER
-            while(mapperIsDone >0) {                    
-                // fprintf(stderr,"%d",mapperIsDone);
-                // amazingcounter -= mapperIsDone;
+            while(mapperIsDone >0) {               
                 asm("");
                 sleep(.1);
             }
@@ -313,20 +294,9 @@ int main(int argc, char** argv) {
         }
     }
     omp_destroy_lock(&parserlck);
-    omp_destroy_lock(&mapperlck);
     omp_destroy_lock(&reducerlck);
-    printf("\nAAKASH LIKE PINEAPPLES\n");
     printHashMap(hashMap);
     // printMapperQueue(mapperQ);
-    
     // printReductionQueue(reductionQ);
-
-    //Step 2: Reduce Step
-    
     return 0;
 }
-
-
-
-
-
