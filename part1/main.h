@@ -35,10 +35,10 @@ typedef struct ReductionWorkQueue {
 int hashCode(char* word);
 void initHashMap(HashMap * hashMap);
 void initMapperQueues(MapperWorkQueue * mapperQ);
-void addToMapperQueue(MapperWorkQueue* mapperQ,MapperWorkElement* wordElement, int index);
+void addToMapperQueue(MapperWorkQueue* mapperQ, MapperWorkElement* wordElement, int index);
 void initReductionQueues(ReductionWorkQueue * reductionQ);
 void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t *lck);
-void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index, int *readerIsDone, omp_lock_t *parserlck ,omp_lock_t *mapperlck);
+void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index, omp_lock_t *parserlck);
 void reducer(ReductionWorkQueue* reductionQ, HashMap* hashMap, int index, omp_lock_t* lck);
 int addToHashMap(HashMap *hashMap, char *buffer);
 void printHashMap(HashMap *hashMap);
