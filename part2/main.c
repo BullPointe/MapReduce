@@ -322,7 +322,6 @@ int main(int argc, char** argv) {
             //REDUCER
             while(mapperIsDone >0) {               
                 asm("");
-                sleep(.1);
             }
             if(tid == 0){
                 MPI_Barrier(MPI_COMM_WORLD);
@@ -332,9 +331,9 @@ int main(int argc, char** argv) {
                 int totalLength = reductionQToArray(reductionQ, &reductionArr);
                 createHeaderStruct(reductionQ, &headerArr);
                 int i = 0;
-                // if(pid == 1){
-                //     printReductionQueue(reductionQ);
-                // }
+                if(pid == 1){
+                    printReductionQueue(reductionQ);
+                }
                 // if(pid == 0){
                 //     printf("\nBEFORE\n");
                 //     for(i = 0; i < totalLength; i++){
@@ -360,16 +359,39 @@ int main(int argc, char** argv) {
                     countsToSend[i] = BUFFERSIZE * (headerArr[i*NUM_REDUCERS + NUM_REDUCERS - 1] - headerArr[i*NUM_REDUCERS]);
                     countsToRecv[i] = BUFFERSIZE * (countFromEachProcessesArr[i*NUM_REDUCERS + NUM_REDUCERS - 1] - countFromEachProcessesArr[i*NUM_REDUCERS]);
                     displacementsToSend[i] = 0;
+                    displacementsToRecv[i] = 0;
                 }
-                displacementsToRecv[0] = 0;
-                displacementsToSend[0] = 0;
                 for(i = 1; i < numP; i++){
                     //displacementsToSend[i] = displacementsToSend[i - 1] + countsToSend[i - 1];
                     displacementsToRecv[i] = displacementsToRecv[i - 1] + countsToRecv[i - 1];
                 }
                 MPI_Alltoallv(reductionArr,countsToSend,displacementsToSend,MPI_CHAR,
                 bufferToRecv,countsToRecv,displacementsToRecv,MPI_CHAR, MPI_COMM_WORLD);
-                if(pid == 0){
+                MPI_Barrier(MPI_COMM_WORLD);
+                if(pid == 1){
+                    printf("--------------\n");
+                    for(i = 0; i < TOTAL_REDUCERS; i++){
+                        printf("%d, ", headerArr[i]);
+                    }
+                    printf("\n--------------\n");
+                    for(i = 0; i < numP; i++){
+                        printf("%d, ", countsToSend[i]);
+                    }
+                    printf("\n--------------\n");
+                    for(i = 0; i < numP; i++){
+                        printf("%d, ", countsToRecv[i]);
+                    }
+                    printf("\n--------------\n");
+                    for(i = 0; i < numP; i++){
+                        printf("%d, ", displacementsToSend[i]);
+                    }
+                    printf("\n--------------\n");
+                    for(i = 0; i < numP; i++){
+                        printf("%d, ", displacementsToRecv[i]);
+                    }
+                    printf("\n--------------\n");
+                }
+                if(pid == 1){
                     printf("\nAfter\n");
                     for(i = 0; i < totalCountToRecv; i++){
                         printf("%s\n", &(bufferToRecv[BUFFERSIZE*i]));

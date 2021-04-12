@@ -251,7 +251,6 @@ int main(int argc, char** argv) {
     //SHARED VARIABLES: MAPPER WORK QUEUES + REDUCTION WORK QUEUES + ReaderIsDone
     int readerIsDone = NUM_READERS;
     int mapperIsDone = NUM_MAPPERS;
-    int amazingcounter = 0;
     //omp parallel {} NOT paralllel FOR!
     // for(tid = 1; tid < NUMPROCESS; tid++){
     omp_lock_t parserlck,reducerlck;
@@ -263,7 +262,7 @@ int main(int argc, char** argv) {
     {
         //Split this based on TID e.g if tid == 1 -5 do reading, 6-10 do mapping, etc..
         int tid = omp_get_thread_num();
-        if(tid > 0 && tid<=5) {
+        if(tid > 0 && tid <= NUM_READERS) {
             //READER
             FILE * input = fopen(argv[tid], "r");
             if(input == NULL){
@@ -274,23 +273,22 @@ int main(int argc, char** argv) {
                 readerIsDone -= 1;
             }
         }
-        else if(tid > 5 && tid <= 10) {
+        else if(tid > NUM_READERS && tid <= NUM_READERS + NUM_MAPPERS) {
             //MAPPER
             while(readerIsDone >0) {
                 asm("");
-                sleep(.1);
-                mapper(mapperQ,reductionQ,tid - 6,&parserlck);
+                mapper(mapperQ,reductionQ,tid - (NUM_MAPPERS + 1),&parserlck);
             }
             // mapper(mapperQ,reductionQ,tid - 6,&readerIsDone,&parserlck,&mapperlck);
             mapperIsDone -= 1;
         }
-        else if(tid > 10 && tid <= 16){
+        else if(tid > NUM_READERS + NUM_MAPPERS && tid <= NUMPROCESS){
             //REDUCER
             while(mapperIsDone >0) {               
                 asm("");
                 sleep(.1);
             }
-            reducer(reductionQ,hashMap,tid-11,&reducerlck);
+            reducer(reductionQ,hashMap,tid-(NUM_READERS + NUM_MAPPERS + 1),&reducerlck);
         }
     }
     omp_destroy_lock(&parserlck);
