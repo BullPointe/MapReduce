@@ -14,7 +14,7 @@
 #define NUM_MAPPERS 5
 #define NUM_READERS 5
 #define NUM_REDUCERS 5
-#define NUMP 2
+#define NUMP 4
 #define TOTAL_REDUCERS (NUM_REDUCERS * NUMP)
 
 int hashCode(char* word){
@@ -145,15 +145,13 @@ int addToHashMap(HashMap *hashMap, char *buffer){
     }
 }
 
-void printHashMap(HashMap *hashMap){
-    printf("PRINTING HASH MAP\n");
+void printHashMap(HashMap *hashMap, FILE *outFile){
     int i;
     for(i = 0; i < HASHARRAYSIZE; i++){
         if(hashMap[i].head != NULL){
-            printf("HASHCODE: %d \n", i);
             WordPair *temp = hashMap[i].head;
             while(temp != NULL){
-                printf("(%s, %d) \n", temp -> word, temp -> count);
+                fprintf(outFile, "(%s, %d) \n", temp -> word, temp -> count);
                 temp = temp -> next;
             }
         }
@@ -246,11 +244,30 @@ int reductionQToArray(ReductionWorkQueue* reductionQ, char ** reductionArr){
 void createHeaderStruct(ReductionWorkQueue* reductionQ, int ** headerArr){
     *headerArr = malloc(sizeof(int) * TOTAL_REDUCERS); 
     int i;
-    (*headerArr)[0] = reductionQ[0].len;
-    for(i = 1; i < TOTAL_REDUCERS; i++){
-        (*headerArr)[i] = (*headerArr)[i - 1] + reductionQ[i].len; 
+    for(i = 0; i < TOTAL_REDUCERS; i++){
+        (*headerArr)[i] = reductionQ[i].len; 
     }
 }
+
+void bufferToReductionQ(char * buffer, ReductionWorkQueue* finalReductionQ, int *countFromEachProcessesArr){
+    int i,j,buffIndex;
+    buffIndex = 0;
+    for(i = 0; i < TOTAL_REDUCERS; i++){
+        for(j = 0; j < countFromEachProcessesArr[i]; j++){
+            WordPair* wordPair = malloc(sizeof(*wordPair));
+            wordPair ->next = NULL;
+            wordPair ->count = 1;
+            wordPair ->word = malloc(sizeof(char) * BUFFERSIZE);
+            memcpy(wordPair -> word, &(buffer[BUFFERSIZE * buffIndex]), BUFFERSIZE);
+            ReductionWorkElement* reductionElement = malloc(sizeof(*reductionElement));
+            reductionElement ->wordPair = wordPair;
+            reductionElement ->next = NULL;
+            addToReductionQueue(finalReductionQ,reductionElement,i%NUM_REDUCERS);
+            buffIndex += 1;
+        }
+    }
+}
+
 // 16 Threads
 // 1 Thread - Master 
 // 5 Threads - Readers 
@@ -277,22 +294,25 @@ int main(int argc, char** argv) {
     HashMap* hashMap = malloc(sizeof(HashMap) * HASHARRAYSIZE);
     MapperWorkQueue* mapperQ = malloc(sizeof(MapperWorkQueue) * NUM_MAPPERS);
     ReductionWorkQueue* reductionQ = malloc(sizeof(*reductionQ) * NUM_REDUCERS * numP);
+    ReductionWorkQueue* finalReductionQ = malloc(sizeof(*finalReductionQ) * NUM_REDUCERS * numP);
 
     initHashMap(hashMap);
     initMapperQueues(mapperQ);
     initReductionQueues(reductionQ); 
+    initReductionQueues(finalReductionQ); 
 
     //Step 1: Map Step
     //SHARED VARIABLES: MAPPER WORK QUEUES + REDUCTION WORK QUEUES + ReaderIsDone
     int readerIsDone = NUM_READERS;
     int mapperIsDone = NUM_MAPPERS;
+    int commIsDone = 0;
     //omp parallel {} NOT paralllel FOR!
     // for(tid = 1; tid < NUMPROCESS; tid++){
     omp_lock_t parserlck,reducerlck;
     omp_init_lock(&parserlck);
     omp_init_lock(&reducerlck);
     omp_set_num_threads(NUMPROCESS);
-    #pragma omp parallel shared(readerIsDone,mapperIsDone,mapperQ,reductionQ,hashMap)
+    #pragma omp parallel shared(readerIsDone,mapperIsDone,commIsDone,mapperQ,reductionQ,hashMap,finalReductionQ)
     {
         //Split this based on TID e.g if tid == 1 -5 do reading, 6-10 do mapping, etc..
         int tid = omp_get_thread_num();
@@ -325,106 +345,77 @@ int main(int argc, char** argv) {
             }
             if(tid == 0){
                 MPI_Barrier(MPI_COMM_WORLD);
-                //Create continguous array from reductionQ
                 char * reductionArr;
                 int * headerArr;
                 int totalLength = reductionQToArray(reductionQ, &reductionArr);
                 createHeaderStruct(reductionQ, &headerArr);
-                int i = 0;
-                if(pid == 1){
-                    printReductionQueue(reductionQ);
-                }
-                // if(pid == 0){
-                //     printf("\nBEFORE\n");
-                //     for(i = 0; i < totalLength; i++){
-                //         printf("%s\n", &(reductionArr[BUFFERSIZE*i]));
-                //     }
-                // }
-                // char * bufferCharArr;
+                int i,j,k = 0;
+                char * bufferCharArr;
                 int * countFromEachProcessesArr = malloc(sizeof(int) * TOTAL_REDUCERS);
                 MPI_Alltoall(headerArr, NUM_REDUCERS, MPI_INT, countFromEachProcessesArr, NUM_REDUCERS, MPI_INT, MPI_COMM_WORLD);
                 MPI_Barrier(MPI_COMM_WORLD);
-                
-                int totalCountToRecv;
-                for(i = 0; i < numP; i++){
-                    totalCountToRecv += countFromEachProcessesArr[i*NUM_REDUCERS + NUM_REDUCERS - 1] - countFromEachProcessesArr[i*NUM_REDUCERS];
+                int totalCountToRecv = 0;
+                int totalCountToSend = 0; 
+                int localCountRecv = 0;
+                int localCountSend = 0;
+                int localDisplacementRecv = 0;
+                int localDisplacementSend = 0;
+                for(i = 0; i < TOTAL_REDUCERS; i++){
+                    totalCountToRecv += countFromEachProcessesArr[i];
+                    totalCountToSend += headerArr[i];
                 }
                 int * countsToSend = malloc(sizeof(int) * numP);
                 int * displacementsToSend = malloc(sizeof(int) * numP);
                 char * bufferToRecv = malloc(sizeof(char) * BUFFERSIZE * totalCountToRecv);
                 int * countsToRecv = malloc(sizeof(int) * numP); 
                 int * displacementsToRecv = malloc(sizeof(int) * numP);
-                
                 for(i = 0; i < numP; i++){
-                    countsToSend[i] = BUFFERSIZE * (headerArr[i*NUM_REDUCERS + NUM_REDUCERS - 1] - headerArr[i*NUM_REDUCERS]);
-                    countsToRecv[i] = BUFFERSIZE * (countFromEachProcessesArr[i*NUM_REDUCERS + NUM_REDUCERS - 1] - countFromEachProcessesArr[i*NUM_REDUCERS]);
-                    displacementsToSend[i] = 0;
-                    displacementsToRecv[i] = 0;
+                    localCountRecv = 0; 
+                    localCountSend = 0;
+                    localDisplacementSend = 0;
+                    localDisplacementRecv = 0; 
+                    for(j = i*NUM_REDUCERS; j < i*NUM_REDUCERS + NUM_REDUCERS; j++){
+                        localCountRecv += countFromEachProcessesArr[j];
+                        localCountSend += headerArr[j];
+                    }
+                    countsToSend[i] = BUFFERSIZE * localCountSend;
+                    countsToRecv[i] = BUFFERSIZE * localCountRecv;
+                    for(k = i*NUM_REDUCERS - 1; k >= 0; k--){
+                        localDisplacementSend += headerArr[k];
+                        localDisplacementRecv += countFromEachProcessesArr[k];
+                    }
+                    displacementsToSend[i] = BUFFERSIZE * localDisplacementSend;
+                    displacementsToRecv[i] = BUFFERSIZE * localDisplacementRecv;
                 }
-                for(i = 1; i < numP; i++){
-                    //displacementsToSend[i] = displacementsToSend[i - 1] + countsToSend[i - 1];
-                    displacementsToRecv[i] = displacementsToRecv[i - 1] + countsToRecv[i - 1];
-                }
-                MPI_Alltoallv(reductionArr,countsToSend,displacementsToSend,MPI_CHAR,
-                bufferToRecv,countsToRecv,displacementsToRecv,MPI_CHAR, MPI_COMM_WORLD);
-                MPI_Barrier(MPI_COMM_WORLD);
-                if(pid == 1){
-                    printf("--------------\n");
+                if(pid == 3){
                     for(i = 0; i < TOTAL_REDUCERS; i++){
-                        printf("%d, ", headerArr[i]);
+                        printf("%d, ", countFromEachProcessesArr[i]);
                     }
-                    printf("\n--------------\n");
                     for(i = 0; i < numP; i++){
-                        printf("%d, ", countsToSend[i]);
-                    }
-                    printf("\n--------------\n");
-                    for(i = 0; i < numP; i++){
-                        printf("%d, ", countsToRecv[i]);
-                    }
-                    printf("\n--------------\n");
-                    for(i = 0; i < numP; i++){
-                        printf("%d, ", displacementsToSend[i]);
-                    }
-                    printf("\n--------------\n");
-                    for(i = 0; i < numP; i++){
-                        printf("%d, ", displacementsToRecv[i]);
-                    }
-                    printf("\n--------------\n");
-                }
-                if(pid == 1){
-                    printf("\nAfter\n");
-                    for(i = 0; i < totalCountToRecv; i++){
-                        printf("%s\n", &(bufferToRecv[BUFFERSIZE*i]));
+                        printf("%d, %d, %d, %d \n", countsToSend[i], countsToRecv[i], displacementsToSend[i], displacementsToRecv[i]);
                     }
                 }
+                // MPI_Alltoallv(reductionArr,countsToSend,displacementsToSend,MPI_CHAR, bufferToRecv,countsToRecv,displacementsToRecv,MPI_CHAR, MPI_COMM_WORLD);
+                // MPI_Barrier(MPI_COMM_WORLD);
+                
+                // bufferToReductionQ(bufferToRecv, finalReductionQ, countFromEachProcessesArr);
+                // commIsDone = 1;
+            } else {
+                // while(!commIsDone){
+                //     asm("");
+                // }
+                // reducer(finalReductionQ,hashMap,tid-(NUM_READERS + NUM_MAPPERS + 1),&reducerlck);
             }
-            // int recvLength = 0;
-            // int i = 0;
-            
-            //MPI_Alltoall(&reductionArr, totalLength*BUFFERSIZE, MPI_CHAR,
-            ///bufferCharArr, recvLength*BUFFERSIZE, MPI_CHAR, MPI_COMM_WORLD);
-            // int i;
-            // if(pid == 0 && tid == 13){
-            //     printf("\nBEFORE\n");
-            //     for(i = 0; i < TOTAL_REDUCERS; i++){
-            //         printf("%d, ", headerArr[i]);
-            //     }
-            //     printf("\nAFTER\n");
-            //     for(i = 0; i < TOTAL_REDUCERS; i++){
-            //         printf("%d, ", countFromEachProcessesArr[i]);
-            //     }
-            // }
-            //reducer(reductionQ,hashMap,tid-(NUM_READERS + NUM_MAPPERS + 1),&reducerlck);
         }
     }
     omp_destroy_lock(&parserlck);
     omp_destroy_lock(&reducerlck);
-    if(pid == 0){
-        printf("PID: %d", pid);
-        //printReductionQueue(reductionQ);
-    }
-    // printHashMap(hashMap);
-    // printMapperQueue(mapperQ);
-    MPI_Finalize();
+    // char buf[10];
+    // sprintf(buf, "%d", pid);
+    // char *filename = strcat(buf,".txtout");
+    // FILE *outFile = fopen(filename, "w");
+    // printHashMap(hashMap, outFile);
+    // MPI_Finalize();
+    // printf("MAP REDUCE COMPLETE");
     return 0; 
 }

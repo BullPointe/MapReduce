@@ -42,5 +42,6 @@ void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index,
 void reducer(ReductionWorkQueue* reductionQ, HashMap* hashMap, int index, omp_lock_t* lck);
 int reductionQToArray(ReductionWorkQueue* reductionQ, char ** reductionArr);
 void createHeaderStruct(ReductionWorkQueue* reductionQ, int ** headerArr);
+void bufferToReductionQ(char * buffer, ReductionWorkQueue* finalReductionQ, int *countFromEachProcessesArr);
 int addToHashMap(HashMap *hashMap, char *buffer);
-void printHashMap(HashMap *hashMap);
+void printHashMap(HashMap *hashMap, FILE *outFile);
