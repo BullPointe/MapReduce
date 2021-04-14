@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include "main.h"
 
-
 #define HASHARRAYSIZE 65536
 #define NUMPROCESS 16
 #define BUFFERSIZE 50
@@ -225,7 +224,9 @@ int reductionQToArray(ReductionWorkQueue* reductionQ, char ** reductionArr){
     int totalLength = 0;
     int i;
     for(i = 0; i < TOTAL_REDUCERS; i++){
-        totalLength += reductionQ[i].len;
+        if(reductionQ[i].head != NULL){
+            totalLength += reductionQ[i].len;
+        }
     }
     *reductionArr = malloc(sizeof(char) * totalLength * BUFFERSIZE);
     int index = 0;
@@ -245,7 +246,11 @@ void createHeaderStruct(ReductionWorkQueue* reductionQ, int ** headerArr){
     *headerArr = malloc(sizeof(int) * TOTAL_REDUCERS); 
     int i;
     for(i = 0; i < TOTAL_REDUCERS; i++){
-        (*headerArr)[i] = reductionQ[i].len; 
+        if(reductionQ[i].head == NULL){
+            (*headerArr)[i] = 0;
+        } else {
+            (*headerArr)[i] = reductionQ[i].len;    
+        }
     }
 }
 
@@ -281,9 +286,6 @@ void bufferToReductionQ(char * buffer, ReductionWorkQueue* finalReductionQ, int 
     // Counts them
     // We call reduce on the array since the indexes are the same
 
-//Final array of the entire hashmap
-//userdefined reduction
-
 int main(int argc, char** argv) {
     //MPI Initialization
     int pid, numP;
@@ -302,12 +304,10 @@ int main(int argc, char** argv) {
     initReductionQueues(finalReductionQ); 
 
     //Step 1: Map Step
-    //SHARED VARIABLES: MAPPER WORK QUEUES + REDUCTION WORK QUEUES + ReaderIsDone
     int readerIsDone = NUM_READERS;
     int mapperIsDone = NUM_MAPPERS;
     int commIsDone = 0;
-    //omp parallel {} NOT paralllel FOR!
-    // for(tid = 1; tid < NUMPROCESS; tid++){
+
     omp_lock_t parserlck,reducerlck;
     omp_init_lock(&parserlck);
     omp_init_lock(&reducerlck);
@@ -319,7 +319,6 @@ int main(int argc, char** argv) {
         if(tid > 0 && tid <= NUM_READERS) {
             //READER
             FILE * input = fopen(argv[pid*NUM_READERS + tid], "r");
-            // printf("READER GANG: %d, TID: %d, PID: %d\n", pid*NUM_READERS + tid, tid, pid);
             if(input == NULL){
                 printf("Unable to open file");
             }
@@ -330,12 +329,10 @@ int main(int argc, char** argv) {
         }
         else if(tid > NUM_READERS && tid <= NUM_READERS + NUM_MAPPERS) {
             //MAPPER
-            // printf("MAPPER GANG: TID: %d, PID: %d \n", tid, pid);
             while(readerIsDone >0) {
                 asm("");
                 mapper(mapperQ,reductionQ,tid - (NUM_MAPPERS + 1),&parserlck);
             }
-            // mapper(mapperQ,reductionQ,tid - 6,&readerIsDone,&parserlck,&mapperlck);
             mapperIsDone -= 1;
         }
         else if(tid == 0 || (tid > NUM_READERS + NUM_MAPPERS && tid <= NUMPROCESS)){
@@ -387,24 +384,24 @@ int main(int argc, char** argv) {
                     displacementsToSend[i] = BUFFERSIZE * localDisplacementSend;
                     displacementsToRecv[i] = BUFFERSIZE * localDisplacementRecv;
                 }
-                if(pid == 3){
-                    for(i = 0; i < TOTAL_REDUCERS; i++){
-                        printf("%d, ", countFromEachProcessesArr[i]);
-                    }
-                    for(i = 0; i < numP; i++){
-                        printf("%d, %d, %d, %d \n", countsToSend[i], countsToRecv[i], displacementsToSend[i], displacementsToRecv[i]);
-                    }
-                }
-                // MPI_Alltoallv(reductionArr,countsToSend,displacementsToSend,MPI_CHAR, bufferToRecv,countsToRecv,displacementsToRecv,MPI_CHAR, MPI_COMM_WORLD);
-                // MPI_Barrier(MPI_COMM_WORLD);
-                
-                // bufferToReductionQ(bufferToRecv, finalReductionQ, countFromEachProcessesArr);
-                // commIsDone = 1;
-            } else {
-                // while(!commIsDone){
-                //     asm("");
+                // if(pid == 3){
+                //     for(i = 0; i < TOTAL_REDUCERS; i++){
+                //         printf("%d, ", countFromEachProcessesArr[i]);
+                //     }
+                //     for(i = 0; i < numP; i++){
+                //         printf("%d, %d, %d, %d \n", countsToSend[i], countsToRecv[i], displacementsToSend[i], displacementsToRecv[i]);
+                //     }
                 // }
-                // reducer(finalReductionQ,hashMap,tid-(NUM_READERS + NUM_MAPPERS + 1),&reducerlck);
+                MPI_Alltoallv(reductionArr,countsToSend,displacementsToSend,MPI_CHAR, bufferToRecv,countsToRecv,displacementsToRecv,MPI_CHAR, MPI_COMM_WORLD);
+                MPI_Barrier(MPI_COMM_WORLD);
+                
+                bufferToReductionQ(bufferToRecv, finalReductionQ, countFromEachProcessesArr);
+                commIsDone = 1;
+            } else {
+                while(!commIsDone){
+                    asm("");
+                }
+                reducer(finalReductionQ,hashMap,tid-(NUM_READERS + NUM_MAPPERS + 1),&reducerlck);
             }
         }
     }
@@ -414,8 +411,8 @@ int main(int argc, char** argv) {
     // sprintf(buf, "%d", pid);
     // char *filename = strcat(buf,".txtout");
     // FILE *outFile = fopen(filename, "w");
-    // printHashMap(hashMap, outFile);
-    // MPI_Finalize();
+    printHashMap(hashMap, stdout);
+    MPI_Finalize();
     // printf("MAP REDUCE COMPLETE");
     return 0; 
 }
