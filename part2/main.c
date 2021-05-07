@@ -13,7 +13,7 @@
 #define NUM_MAPPERS 5
 #define NUM_READERS 5
 #define NUM_REDUCERS 5
-#define NUMP 4
+#define NUMP 2
 #define TOTAL_REDUCERS (NUM_REDUCERS * NUMP)
 
 int hashCode(char* word){
@@ -157,10 +157,22 @@ void printHashMap(HashMap *hashMap, FILE *outFile){
     }
 }
 
+void mergeMapperQueues(MapperWorkQueue* mapperQLocal, MapperWorkQueue* mapperQ) {
+
+    int i;
+    for(i = 0; i < NUM_MAPPERS; i++) {
+        MapperWorkElement* head = mapperQLocal[i].head;
+        while(head != NULL) {
+            addToMapperQueue(mapperQ,head,i);
+            head = head ->next;
+        }
+    }
+}
 
 void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t* lck){
     char* buffer = malloc(sizeof(*buffer) * BUFFERSIZE);
     int hashNum;
+    MapperWorkQueue* mapperQLocal = malloc(sizeof(MapperWorkQueue) * NUM_MAPPERS);
     while(fscanf(f, "%s", buffer) != EOF){
         //Distribute to the Buffers and the other threads will deal with mapping
         MapperWorkElement* wordElement = malloc(sizeof(*wordElement));
@@ -179,10 +191,17 @@ void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t* lck)
             }
         }
         //Add to Q
-        omp_set_lock(lck);
-        addToMapperQueue(mapperQ,wordElement,minIndex);
-        omp_unset_lock(lck);
+        // omp_set_lock(lck);
+        // addToMapperQueue(mapperQ,wordElement,minIndex);
+        addToMapperQueue(mapperQLocal,wordElement,minIndex);
+
+        // omp_unset_lock(lck);
     }
+
+    omp_set_lock(lck);
+    mergeMapperQueues(mapperQLocal,mapperQ);
+    omp_unset_lock(lck);
+
 }
 
 void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index, omp_lock_t* parserlck) {
@@ -290,6 +309,7 @@ int main(int argc, char** argv) {
     //MPI Initialization
     int pid, numP;
     MPI_Init(&argc, &argv);
+    double startTime = MPI_Wtime();
     MPI_Comm_size(MPI_COMM_WORLD, &numP);
     MPI_Comm_rank(MPI_COMM_WORLD, &pid);
     
@@ -411,8 +431,12 @@ int main(int argc, char** argv) {
     // sprintf(buf, "%d", pid);
     // char *filename = strcat(buf,".txtout");
     // FILE *outFile = fopen(filename, "w");
-    printHashMap(hashMap, stdout);
+    // printHashMap(hashMap, stdout);
+    double endTime = MPI_Wtime();
+
     MPI_Finalize();
+
+    printf("TOTAL TIME %lf\n",endTime - startTime);
     // printf("MAP REDUCE COMPLETE");
     return 0; 
 }

@@ -1,0 +1,1 @@
+/var/spool/slurm/job84138/slurm_script: line 8: 26132 Segmentation fault      ./main files/1.txt files/1.txt files/1.txt files/1.txt files/1.txt

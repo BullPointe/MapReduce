@@ -45,3 +45,4 @@ void createHeaderStruct(ReductionWorkQueue* reductionQ, int ** headerArr);
 void bufferToReductionQ(char * buffer, ReductionWorkQueue* finalReductionQ, int *countFromEachProcessesArr);
 int addToHashMap(HashMap *hashMap, char *buffer);
 void printHashMap(HashMap *hashMap, FILE *outFile);
+void mergeMapperQueues(MapperWorkQueue* mapperQLocal, MapperWorkQueue* mapperQ);

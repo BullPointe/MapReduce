@@ -42,3 +42,4 @@ void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index,
 void reducer(ReductionWorkQueue* reductionQ, HashMap* hashMap, int index, omp_lock_t* lck);
 int addToHashMap(HashMap *hashMap, char *buffer);
 void printHashMap(HashMap *hashMap);
+void mergeMapperQueues(MapperWorkQueue* mapperQLocal, MapperWorkQueue* mapperQ);

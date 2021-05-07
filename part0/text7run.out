@@ -1,0 +1,16 @@
+Time for Reader 1: 0.003619
+Time for Reader 2: 0.001776
+Time for Reader 3: 0.001581
+Time for Reader 4: 0.001602
+Time for Reader 5: 0.001627
+Time for Mapper 6: 0.000785
+Time for Mapper 7: 0.000761
+Time for Mapper 8: 0.000775
+Time for Mapper 9: 0.000812
+Time for Mapper 10: 0.000778
+Time for Reducer 11: 0.000523
+Time for Reducer 12: 0.000437
+Time for Reducer 13: 0.000557
+Time for Reducer 14: 0.000462
+Time for Reducer 15: 0.000502
+Time Taken Sequential: 0.016633
