@@ -292,6 +292,7 @@ int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &numP);
     MPI_Comm_rank(MPI_COMM_WORLD, &pid);
+    double elapsedTime = -MPI_Wtime();
     
     HashMap* hashMap = malloc(sizeof(HashMap) * HASHARRAYSIZE);
     MapperWorkQueue* mapperQ = malloc(sizeof(MapperWorkQueue) * NUM_MAPPERS);
@@ -411,6 +412,8 @@ int main(int argc, char** argv) {
     // sprintf(buf, "%d", pid);
     // char *filename = strcat(buf,".txtout");
     // FILE *outFile = fopen(filename, "w");
+    double timeTaken = (elapsedTime + MPI_Wtime( ));
+    printf("Time taken for MapReduce: %f\n", timeTaken);
     printHashMap(hashMap, stdout);
     MPI_Finalize();
     // printf("MAP REDUCE COMPLETE");
