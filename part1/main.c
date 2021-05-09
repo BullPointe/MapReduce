@@ -8,11 +8,11 @@
 
 
 #define HASHARRAYSIZE 65536
-#define NUMPROCESS 16
+#define NUMPROCESS 12
 #define BUFFERSIZE 50
 #define NUM_MAPPERS 5
 #define NUM_READERS 5
-#define NUM_REDUCERS 5
+#define NUM_REDUCERS 1
 
 
 int hashCode(char* word){
@@ -159,10 +159,23 @@ void printHashMap(HashMap *hashMap){
     }
 }
 
+void mergeMapperQueues(MapperWorkQueue* mapperQLocal, MapperWorkQueue* mapperQ) {
+
+    int i;
+    for(i = 0; i < NUM_MAPPERS; i++) {
+        MapperWorkElement* head = mapperQLocal[i].head;
+        while(head != NULL) {
+            addToMapperQueue(mapperQ,head,i);
+            head = head ->next;
+        }
+    }
+}
+
 
 void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t* lck){
     char* buffer = malloc(sizeof(*buffer) * BUFFERSIZE);
     int hashNum;
+    MapperWorkQueue* mapperQLocal = malloc(sizeof(MapperWorkQueue) * NUM_MAPPERS);
     while(fscanf(f, "%s", buffer) != EOF){
         //Distribute to the Buffers and the other threads will deal with mapping
         MapperWorkElement* wordElement = malloc(sizeof(*wordElement));
@@ -181,10 +194,16 @@ void parser(FILE *f, HashMap *hashMap,MapperWorkQueue* mapperQ, omp_lock_t* lck)
             }
         }
         //Add to Q
-        omp_set_lock(lck);
-        addToMapperQueue(mapperQ,wordElement,minIndex);
-        omp_unset_lock(lck);
+        // omp_set_lock(lck);
+        addToMapperQueue(mapperQLocal,wordElement,minIndex);
+        // omp_unset_lock(lck);
     }
+
+    omp_set_lock(lck);
+    mergeMapperQueues(mapperQLocal,mapperQ);
+    omp_unset_lock(lck);
+
+
 }
 
 void mapper(MapperWorkQueue* mapperQ, ReductionWorkQueue* reductionQ, int index, omp_lock_t* parserlck) {
@@ -257,13 +276,18 @@ int main(int argc, char** argv) {
     omp_init_lock(&parserlck);
     omp_init_lock(&reducerlck);
 
+    double startTimeTotal = omp_get_wtime();
+
+    
     omp_set_num_threads(NUMPROCESS);
     #pragma omp parallel shared(readerIsDone,mapperIsDone,mapperQ,reductionQ,hashMap)
-    {
+    {   
+        double startTime = omp_get_wtime();
         //Split this based on TID e.g if tid == 1 -5 do reading, 6-10 do mapping, etc..
         int tid = omp_get_thread_num();
         if(tid > 0 && tid <= NUM_READERS) {
             //READER
+            double temp = omp_get_wtime();
             FILE * input = fopen(argv[tid], "r");
             if(input == NULL){
                 printf("Unable to open file");
@@ -272,13 +296,16 @@ int main(int argc, char** argv) {
                 parser(input, hashMap,mapperQ, &parserlck);
                 readerIsDone -= 1;
             }
+            printf("Total Time for reader,%d: %lf\n",tid,omp_get_wtime() - temp);
         }
         else if(tid > NUM_READERS && tid <= NUM_READERS + NUM_MAPPERS) {
             //MAPPER
+            double temp = omp_get_wtime();
             while(readerIsDone >0) {
                 asm("");
                 mapper(mapperQ,reductionQ,tid - (NUM_MAPPERS + 1),&parserlck);
             }
+            printf("Total Time for mapper,%d: %lf\n",tid,omp_get_wtime() - temp);
             // mapper(mapperQ,reductionQ,tid - 6,&readerIsDone,&parserlck,&mapperlck);
             mapperIsDone -= 1;
         }
@@ -286,14 +313,23 @@ int main(int argc, char** argv) {
             //REDUCER
             while(mapperIsDone >0) {               
                 asm("");
-                sleep(.1);
+                // sleep(.1);
             }
+            double temp = omp_get_wtime();
             reducer(reductionQ,hashMap,tid-(NUM_READERS + NUM_MAPPERS + 1),&reducerlck);
+            printf("Total Time for reducer,%d: %lf\n",tid,omp_get_wtime() - temp);
         }
+
+        printf("Total Time for thread,%d: %lf\n",tid,omp_get_wtime() - startTime);
     }
+
+    
     omp_destroy_lock(&parserlck);
     omp_destroy_lock(&reducerlck);
-    printHashMap(hashMap);
+    // printHashMap(hashMap);
+
+    printf("Total Time OPen MP: %lf",omp_get_wtime() - startTimeTotal);
+    
     // printMapperQueue(mapperQ);
     // printReductionQueue(reductionQ);
     return 0;
