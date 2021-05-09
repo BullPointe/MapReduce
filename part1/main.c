@@ -8,10 +8,10 @@
 
 
 #define HASHARRAYSIZE 65536
-#define NUMPROCESS 12
+#define NUMPROCESS 4
 #define BUFFERSIZE 50
-#define NUM_MAPPERS 5
-#define NUM_READERS 5
+#define NUM_MAPPERS 1
+#define NUM_READERS 1
 #define NUM_REDUCERS 1
 
 
