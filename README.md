@@ -1,5 +1,9 @@
 ECE 563: Map Reduce Implementation
 
+Authors:
+    Sahil Jaganmohan
+    Aakash Saravanan
+
 How to Run
 ------------------
 
