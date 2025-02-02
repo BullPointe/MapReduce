@@ -1,4 +1,4 @@
-ECE 563: Map Reduce Implementation
+Map Reduce Implementation
 
 Authors:
     Sahil Jaganmohan
